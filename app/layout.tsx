@@ -1,24 +1,48 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Syne, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+const syne = Syne({
+  subsets: ["latin"],
+  variable: "--font-syne",
+});
+
+const jetBrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-jetbrains",
+});
 
 export const metadata: Metadata = {
-    title: "DevTeam OS",
-    description: "AI Dev Team platform that generates full production-ready Next.js projects.",
+  title: "Orbium AI",
+  description: "Next Generation AI Platform",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#000000",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({
-    children,
+  children,
 }: Readonly<{
-    children: React.ReactNode;
+  children: React.ReactNode;
 }>) {
-    return (
-        <html lang="en" className="dark">
-            <body className={`${inter.className} min-h-screen bg-black antialiased selection:bg-indigo-500/30`}>
-                {children}
-            </body>
-        </html>
-    );
+  console.log("RootLayout rendered");
+  return (
+    <html lang="en" style={{ backgroundColor: "#000000", color: "#FFFFFF", margin: 0, padding: 0, height: "100%" }}>
+      <body
+        className={`${syne.variable} ${jetBrainsMono.variable}`}
+        style={{
+          backgroundColor: "#000000",
+          color: "#FFFFFF",
+          margin: 0,
+          padding: 0,
+          minHeight: "100%",
+          fontFamily: "var(--font-jetbrains), monospace",
+        }}
+      >
+        {children}
+      </body>
+    </html>
+  );
 }

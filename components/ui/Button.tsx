@@ -1,36 +1,63 @@
-import * as React from "react"
-import { cn } from "@/lib/utils"
+import React from "react";
+import { cn } from "../../lib/utils";
 
-export interface ButtonProps
-    extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-    variant?: "default" | "secondary" | "ghost" | "outline"
-    size?: "default" | "sm" | "lg" | "icon"
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: "primary" | "secondary" | "outline" | "danger";
+  size?: "sm" | "md" | "lg";
+  isLoading?: boolean;
 }
 
-const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-    ({ className, variant = "default", size = "default", ...props }, ref) => {
-        return (
-            <button
-                ref={ref}
-                className={cn(
-                    "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-zinc-950 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-300 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
-                    {
-                        "bg-zinc-50 text-zinc-900 hover:bg-zinc-200 shadow-[0_0_12px_rgba(255,255,255,0.1)]": variant === "default",
-                        "bg-zinc-800 text-zinc-50 hover:bg-zinc-700/80 shadow-sm border border-zinc-700/50": variant === "secondary",
-                        "hover:bg-zinc-800 hover:text-zinc-50": variant === "ghost",
-                        "border border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-50": variant === "outline",
-                        "h-10 px-4 py-2": size === "default",
-                        "h-9 rounded-md px-3": size === "sm",
-                        "h-11 rounded-md px-8": size === "lg",
-                        "h-10 w-10": size === "icon",
-                    },
-                    className
-                )}
-                {...props}
-            />
-        )
-    }
-)
-Button.displayName = "Button"
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant = "primary", size = "md", isLoading, children, disabled, ...props }, ref) => {
+    
+    const baseStyles = {
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: "6px",
+      fontWeight: "500",
+      transition: "all 0.2s ease",
+      cursor: disabled || isLoading ? "not-allowed" : "pointer",
+      opacity: disabled || isLoading ? 0.6 : 1,
+      border: "none",
+      fontFamily: "var(--font-jetbrains)",
+    };
 
-export { Button }
+    const variantStyles = {
+      primary: { backgroundColor: "#FFFFFF", color: "#000000" },
+      secondary: { backgroundColor: "#1A1A1A", color: "#FFFFFF" },
+      outline: { backgroundColor: "transparent", color: "#FFFFFF", border: "1px solid #1A1A1A" },
+      danger: { backgroundColor: "#EF4444", color: "#FFFFFF" },
+    };
+
+    const sizeStyles = {
+      sm: { padding: "8px 16px", fontSize: "12px" },
+      md: { padding: "12px 24px", fontSize: "14px" },
+      lg: { padding: "16px 32px", fontSize: "16px" },
+    };
+
+    const combinedStyle = {
+      ...baseStyles,
+      ...variantStyles[variant],
+      ...sizeStyles[size],
+      ...(props.style || {}),
+    };
+
+    return (
+      <button
+        ref={ref}
+        disabled={disabled || isLoading}
+        style={combinedStyle}
+        className={cn("orbium-btn", className)}
+        {...props}
+      >
+        {isLoading ? (
+          <span style={{ marginRight: "8px", display: "inline-block", width: "1em", height: "1em", border: "2px solid currentColor", borderRightColor: "transparent", borderRadius: "50%", animation: "spin 0.75s linear infinite" }}></span>
+        ) : null}
+        {children}
+      </button>
+    );
+  }
+);
+
+Button.displayName = "Button";
