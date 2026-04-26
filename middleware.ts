@@ -1,11 +1,11 @@
-import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs";
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
+import { createClient } from "./utils/supabase/middleware";
 
-export async function middleware(req: NextRequest) {
+export async function middleware(request: NextRequest) {
   try {
-    const res = NextResponse.next();
-    const supabase = createMiddlewareClient({ req, res });
+    // This `createClient` function is from our utils, which uses @supabase/ssr
+    // and handles updating the session cookie automatically.
+    const { supabase, response } = await createClient(request);
     
     const {
       data: { session },
@@ -17,7 +17,7 @@ export async function middleware(req: NextRequest) {
     }
 
     // Example simple protection: if navigating to /workspace and not logged in, redirect to /login
-    const url = req.nextUrl.clone();
+    const url = request.nextUrl.clone();
     
     if (url.pathname.startsWith("/workspace") && !session) {
       console.log("Unauthorized access to workspace, redirecting to login");
@@ -32,10 +32,14 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    return res;
+    return response;
   } catch (error) {
     console.error("Middleware error:", error);
-    return NextResponse.next();
+    return NextResponse.next({
+      request: {
+        headers: request.headers,
+      },
+    });
   }
 }
 

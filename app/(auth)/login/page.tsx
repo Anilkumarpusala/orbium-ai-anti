@@ -6,6 +6,7 @@ import { Button } from "../../../components/ui/Button";
 import { Input } from "../../../components/ui/Input";
 import { Card } from "../../../components/ui/Card";
 import { Logo } from "../../../components/ui/Logo";
+import { createClient } from "../../../utils/supabase/client";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,12 +19,20 @@ export default function LoginPage() {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
-    console.log("Login attempt for:", email);
     
-    // Auth logic will go here in the next step
-    setTimeout(() => {
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      setError(error.message);
       setIsLoading(false);
-    }, 1000);
+    } else {
+      router.push("/workspace");
+      router.refresh();
+    }
   };
 
   const containerStyle = {
