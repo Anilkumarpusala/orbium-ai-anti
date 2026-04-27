@@ -20,19 +20,19 @@ export default function LoginPage() {
     setIsLoading(true);
     setError(null);
     
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    // TEMPORARILY DISABLED DB CONNECTION FOR DEBUGGING
+    // const supabase = createClient();
+    // const { error } = await supabase.auth.signInWithPassword({
+    //   email,
+    //   password,
+    // });
 
-    if (error) {
-      setError(error.message);
+    // Simulate successful login after 1 second
+    setTimeout(() => {
       setIsLoading(false);
-    } else {
       router.push("/workspace");
       router.refresh();
-    }
+    }, 1000);
   };
 
   const containerStyle = {

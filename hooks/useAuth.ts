@@ -5,44 +5,25 @@ import { User } from "@supabase/supabase-js";
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const supabase = createBrowserSupabaseClient();
+  
+  // TEMPORARILY DISABLED DB CONNECTION FOR DEBUGGING
+  // const supabase = createBrowserSupabaseClient();
 
   useEffect(() => {
     let mounted = true;
 
-    async function getUser() {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) {
-          console.error("Error fetching session:", error);
-        }
-        if (mounted) {
-          setUser(session?.user ?? null);
-          setLoading(false);
-        }
-      } catch (error) {
-        console.error("Auth initialization error:", error);
-        if (mounted) setLoading(false);
+    // Simulate auth check
+    setTimeout(() => {
+      if (mounted) {
+        setUser({ id: '123', email: 'test@example.com' } as any);
+        setLoading(false);
       }
-    }
-
-    getUser();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        console.log("Auth state changed:", event);
-        if (mounted) {
-          setUser(session?.user ?? null);
-          setLoading(false);
-        }
-      }
-    );
+    }, 500);
 
     return () => {
       mounted = false;
-      authListener.subscription.unsubscribe();
     };
-  }, [supabase]);
+  }, []);
 
-  return { user, loading, supabase };
+  return { user, loading, supabase: null as any };
 }
