@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { createBrowserSupabaseClient } from "../lib/supabase";
+import { createClient } from "../utils/supabase/client";
 import { User } from "@supabase/supabase-js";
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const supabase = createBrowserSupabaseClient();
+  const supabase = createClient();
 
   useEffect(() => {
     let mounted = true;
