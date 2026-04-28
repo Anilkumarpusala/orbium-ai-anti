@@ -201,7 +201,7 @@ export default function OnboardingPage() {
                   margin: "0 0 48px 0",
                 }}
               >
-                Let's set up your AI team
+                Let&apos;s set up your AI team
               </p>
               <button
                 onClick={handleNext}
@@ -315,7 +315,7 @@ export default function OnboardingPage() {
                   fontWeight: 600,
                 }}
               >
-                What's your industry?
+                What&apos;s your industry?
               </h2>
 
               <div

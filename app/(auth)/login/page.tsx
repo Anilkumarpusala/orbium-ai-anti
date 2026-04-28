@@ -124,7 +124,7 @@ export default function LoginPage() {
         </form>
 
         <div style={{ marginTop: "24px", textAlign: "center", fontSize: "14px", color: "#888888", fontFamily: "var(--font-jetbrains)" }}>
-          Don't have an account?{" "}
+          Don&apos;t have an account?{" "}
           <span style={linkStyle} onClick={() => router.push("/signup")}>
             Sign up
           </span>
