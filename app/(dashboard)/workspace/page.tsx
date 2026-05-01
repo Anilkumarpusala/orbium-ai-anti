@@ -95,33 +95,123 @@ export default function WorkspacePage() {
     router.push("/login");
   };
 
+  // ─── Send Task ────────────────────────────────────────────────────────────────
   const handleSend = useCallback(async () => {
     if (!input.trim() || !userId) return;
-    const newTask: Task = {
+
+    // Optimistically create task in UI
+    const optimisticTask: Task = {
       id: crypto.randomUUID(),
       user_id: userId,
       agent_type: activeAgent,
       input: input.trim(),
       output: null,
-      status: "pending",
+      status: "running",
       created_at: new Date().toISOString(),
     };
-    setTasks(prev => [newTask, ...prev]);
-    setSelectedTask(newTask);
+    setTasks(prev => [optimisticTask, ...prev]);
+    setSelectedTask(optimisticTask);
     setInput("");
 
-    const { data, error } = await supabase.from("tasks").insert({
-      user_id: userId,
-      agent_type: newTask.agent_type,
-      input: newTask.input,
-      status: "pending",
-    }).select().single();
+    // Insert into Supabase with 'running' status
+    const { data: inserted, error: insertErr } = await supabase
+      .from("tasks")
+      .insert({
+        user_id: userId,
+        agent_type: optimisticTask.agent_type,
+        input: optimisticTask.input,
+        status: "running",
+      })
+      .select()
+      .single();
 
-    if (!error && data) {
-      setTasks(prev => prev.map(t => t.id === newTask.id ? data as Task : t));
-      setSelectedTask(data as Task);
+    const dbTaskId: string = insertErr || !inserted ? optimisticTask.id : inserted.id;
+
+    // Replace optimistic task with real DB id
+    if (!insertErr && inserted) {
+      setTasks(prev => prev.map(t =>
+        t.id === optimisticTask.id ? { ...inserted as Task, status: "running" } : t
+      ));
+      setSelectedTask({ ...inserted as Task, status: "running" });
     }
-  }, [input, userId, activeAgent, supabase]);
+
+    try {
+      // Only Scout is wired to real LLM for now
+      if (activeAgent === "scout") {
+        const res = await fetch("/api/agents/scout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ task: optimisticTask.input, userId }),
+        });
+
+        const json = await res.json();
+
+        // Handle no API key gracefully
+        if (!res.ok && json.error === "NO_API_KEY") {
+          const noKeyOutput = "⚠️ No API key found.\n\nTo run real tasks, add your API key in Settings.\nClick the ⚙️ Settings link below.";
+          await updateTaskInDB(dbTaskId, "error", noKeyOutput);
+          setTasks(prev => prev.map(t =>
+            t.id === dbTaskId || t.id === optimisticTask.id
+              ? { ...t, status: "error", output: noKeyOutput }
+              : t
+          ));
+          setSelectedTask(prev =>
+            prev?.id === dbTaskId || prev?.id === optimisticTask.id
+              ? { ...prev, status: "error", output: noKeyOutput }
+              : prev
+          );
+          return;
+        }
+
+        if (!res.ok) throw new Error(json.error || "API call failed");
+
+        const output: string = json.output;
+        await updateTaskInDB(dbTaskId, "done", output);
+        setTasks(prev => prev.map(t =>
+          t.id === dbTaskId || t.id === optimisticTask.id
+            ? { ...t, status: "done", output }
+            : t
+        ));
+        setSelectedTask(prev =>
+          prev?.id === dbTaskId || prev?.id === optimisticTask.id
+            ? { ...prev, status: "done", output }
+            : prev
+        );
+      } else {
+        // Rex and Aria are UI-only for now
+        const placeholder = `${agent.name} is not yet wired to a real API.\nReal execution coming soon!`;
+        await updateTaskInDB(dbTaskId, "done", placeholder);
+        setTasks(prev => prev.map(t =>
+          t.id === dbTaskId || t.id === optimisticTask.id
+            ? { ...t, status: "done", output: placeholder }
+            : t
+        ));
+        setSelectedTask(prev =>
+          prev?.id === dbTaskId || prev?.id === optimisticTask.id
+            ? { ...prev, status: "done", output: placeholder }
+            : prev
+        );
+      }
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : "Unknown error occurred";
+      await updateTaskInDB(dbTaskId, "error", `Error: ${errMsg}`);
+      setTasks(prev => prev.map(t =>
+        t.id === dbTaskId || t.id === optimisticTask.id
+          ? { ...t, status: "error", output: `Error: ${errMsg}` }
+          : t
+      ));
+      setSelectedTask(prev =>
+        prev?.id === dbTaskId || prev?.id === optimisticTask.id
+          ? { ...prev, status: "error", output: `Error: ${errMsg}` }
+          : prev
+      );
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input, userId, activeAgent, agent]);
+
+  async function updateTaskInDB(id: string, status: Task["status"], output: string) {
+    await supabase.from("tasks").update({ status, output }).eq("id", id);
+  }
 
   const handleCopy = () => {
     if (selectedTask?.output) {
@@ -142,14 +232,11 @@ export default function WorkspacePage() {
     URL.revokeObjectURL(url);
   };
 
-  // ── Styles ──────────────────────────────────────────────────────────────────
   const mono = "var(--font-jetbrains), monospace";
   const syne = "var(--font-syne), sans-serif";
 
   return (
     <div style={{ display: "flex", height: "100vh", backgroundColor: "#000", overflow: "hidden", position: "relative" }}>
-
-      {/* Pulse keyframe injected via style tag */}
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -158,7 +245,7 @@ export default function WorkspacePage() {
         textarea::placeholder { color: #444; }
       `}</style>
 
-      {/* ── MOBILE OVERLAY ─────────────────────────────────────────────────── */}
+      {/* Mobile overlay */}
       {isMobile && sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
@@ -185,13 +272,13 @@ export default function WorkspacePage() {
               width: "32px", height: "32px", borderRadius: "8px",
               background: "linear-gradient(135deg, #06B6D4, #EC4899)",
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: "16px", fontWeight: "bold",
+              fontSize: "16px", fontWeight: "bold", color: "#000",
             }}>O</div>
             <span style={{ fontFamily: syne, fontWeight: 700, fontSize: "18px", color: "#FFF" }}>Orbium AI</span>
           </div>
         </div>
 
-        {/* My Agents */}
+        {/* Agents */}
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 8px" }}>
           <p style={{
             fontFamily: mono, fontSize: "10px", color: "#444",
@@ -205,18 +292,14 @@ export default function WorkspacePage() {
             return (
               <button
                 key={ag.id}
-                onClick={() => {
-                  setActiveAgent(ag.id);
-                  if (isMobile) setSidebarOpen(false);
-                }}
+                onClick={() => { setActiveAgent(ag.id); if (isMobile) setSidebarOpen(false); }}
                 style={{
                   width: "100%", display: "flex", alignItems: "center", gap: "10px",
                   padding: "10px 12px", borderRadius: "6px", cursor: "pointer",
                   backgroundColor: isActive ? "#111" : "transparent",
                   border: "none",
                   borderLeft: isActive ? `3px solid ${ag.color}` : "3px solid transparent",
-                  marginBottom: "2px",
-                  transition: "all 0.15s ease",
+                  marginBottom: "2px", transition: "all 0.15s ease",
                 }}
               >
                 <span style={{
@@ -234,8 +317,8 @@ export default function WorkspacePage() {
           })}
         </div>
 
-        {/* New Task Button */}
-        <div style={{ padding: "12px 8px" }}>
+        {/* New Task */}
+        <div style={{ padding: "12px 8px", borderTop: "1px solid #111" }}>
           <button
             onClick={() => { textareaRef.current?.focus(); if (isMobile) setSidebarOpen(false); }}
             style={{
@@ -247,21 +330,28 @@ export default function WorkspacePage() {
           >+ New Task</button>
         </div>
 
-        {/* User Info */}
+        {/* User info + Settings */}
         <div style={{ borderTop: "1px solid #1A1A1A", padding: "12px 16px" }}>
-          <p style={{ fontFamily: mono, fontSize: "11px", color: "#444", margin: "0 0 6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {userEmail}
-          </p>
-          <button onClick={handleSignOut} style={{
-            background: "none", border: "none", color: "#555",
-            fontFamily: mono, fontSize: "11px", cursor: "pointer", padding: 0,
-          }}>Sign out →</button>
+          <p style={{
+            fontFamily: mono, fontSize: "11px", color: "#444",
+            margin: "0 0 6px", overflow: "hidden",
+            textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>{userEmail}</p>
+          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+            <button
+              onClick={() => router.push("/settings")}
+              style={{ background: "none", border: "none", color: "#555", fontFamily: mono, fontSize: "11px", cursor: "pointer", padding: 0 }}
+            >⚙️ Settings</button>
+            <button
+              onClick={handleSignOut}
+              style={{ background: "none", border: "none", color: "#555", fontFamily: mono, fontSize: "11px", cursor: "pointer", padding: 0 }}
+            >Sign out →</button>
+          </div>
         </div>
       </aside>
 
       {/* ── CENTER PANEL ───────────────────────────────────────────────────── */}
       <main style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, height: "100vh", overflow: "hidden" }}>
-
         {/* Top bar */}
         <div style={{
           display: "flex", alignItems: "center", gap: "12px",
@@ -280,14 +370,20 @@ export default function WorkspacePage() {
           }} />
           <span style={{ fontFamily: syne, fontSize: "15px", color: "#FFF", fontWeight: 600 }}>{agent.name}</span>
           <span style={{ fontFamily: mono, fontSize: "12px", color: "#555" }}>— {agent.role}</span>
+          {activeAgent === "scout" && (
+            <span style={{
+              marginLeft: "auto", fontFamily: mono, fontSize: "10px",
+              color: "#333", padding: "2px 8px", borderRadius: "999px",
+              border: "1px solid #1A1A1A",
+            }}>Live ⚡</span>
+          )}
         </div>
 
-        {/* Input area */}
+        {/* Input */}
         <div style={{ padding: "16px 20px", borderBottom: "1px solid #111", flexShrink: 0 }}>
           <div style={{
             backgroundColor: "#0A0A0A", border: "1px solid #1A1A1A",
             borderRadius: "8px", overflow: "hidden",
-            transition: "border-color 0.2s",
           }}>
             <textarea
               ref={textareaRef}
@@ -319,7 +415,7 @@ export default function WorkspacePage() {
             </div>
           </div>
 
-          {/* Quick action chips */}
+          {/* Quick chips */}
           <div style={{ display: "flex", gap: "8px", marginTop: "10px", flexWrap: "wrap" }}>
             {QUICK_ACTIONS.map(qa => (
               <button
@@ -328,8 +424,7 @@ export default function WorkspacePage() {
                 style={{
                   padding: "5px 12px", borderRadius: "999px",
                   backgroundColor: "#0A0A0A", border: "1px solid #222",
-                  color: "#AAA", fontFamily: mono, fontSize: "12px",
-                  cursor: "pointer", transition: "all 0.15s",
+                  color: "#AAA", fontFamily: mono, fontSize: "12px", cursor: "pointer",
                 }}
                 onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#444"; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#222"; }}
@@ -364,16 +459,14 @@ export default function WorkspacePage() {
                   padding: "10px 12px", borderRadius: "6px", cursor: "pointer",
                   backgroundColor: isSelected ? "#0D0D0D" : "transparent",
                   borderLeft: isSelected ? "3px solid #FFF" : "3px solid transparent",
-                  marginBottom: "2px",
-                  transition: "all 0.15s",
+                  marginBottom: "2px", transition: "all 0.15s",
                 }}
                 onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.backgroundColor = "#0A0A0A"; }}
                 onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.backgroundColor = "transparent"; }}
               >
                 <div style={{
                   width: "28px", height: "28px", borderRadius: "6px", flexShrink: 0,
-                  backgroundColor: ag.dimColor,
-                  display: "flex", alignItems: "center", justifyContent: "center",
+                  backgroundColor: ag.dimColor, display: "flex", alignItems: "center", justifyContent: "center",
                   color: ag.color, fontFamily: syne, fontWeight: 700, fontSize: "12px",
                 }}>{ag.name[0]}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -397,12 +490,9 @@ export default function WorkspacePage() {
       {!isMobile && (
         <aside style={{
           width: "320px", minWidth: "320px",
-          backgroundColor: "#060606",
-          borderLeft: "1px solid #1A1A1A",
-          display: "flex", flexDirection: "column",
-          height: "100vh", overflow: "hidden",
+          backgroundColor: "#060606", borderLeft: "1px solid #1A1A1A",
+          display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden",
         }}>
-          {/* Results header */}
           <div style={{
             padding: "14px 20px", borderBottom: "1px solid #1A1A1A",
             display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0,
@@ -410,30 +500,23 @@ export default function WorkspacePage() {
             <span style={{ fontFamily: syne, fontSize: "14px", color: "#FFF", fontWeight: 600 }}>Results</span>
             {selectedTask?.output && (
               <div style={{ display: "flex", gap: "8px" }}>
-                <button
-                  onClick={handleCopy}
-                  style={{
+                <button onClick={handleCopy} style={{
+                  padding: "4px 10px", borderRadius: "4px",
+                  backgroundColor: "#111", border: "1px solid #222",
+                  color: copied ? "#22C55E" : "#888",
+                  fontFamily: mono, fontSize: "11px", cursor: "pointer",
+                }}>{copied ? "Copied!" : "Copy"}</button>
+                {selectedTask.agent_type === "scout" && (
+                  <button onClick={handleExportCSV} style={{
                     padding: "4px 10px", borderRadius: "4px",
                     backgroundColor: "#111", border: "1px solid #222",
-                    color: copied ? "#22C55E" : "#888",
-                    fontFamily: mono, fontSize: "11px", cursor: "pointer",
-                  }}
-                >{copied ? "Copied!" : "Copy"}</button>
-                {selectedTask.agent_type === "scout" && (
-                  <button
-                    onClick={handleExportCSV}
-                    style={{
-                      padding: "4px 10px", borderRadius: "4px",
-                      backgroundColor: "#111", border: "1px solid #222",
-                      color: "#888", fontFamily: mono, fontSize: "11px", cursor: "pointer",
-                    }}
-                  >Export CSV</button>
+                    color: "#888", fontFamily: mono, fontSize: "11px", cursor: "pointer",
+                  }}>Export CSV</button>
                 )}
               </div>
             )}
           </div>
 
-          {/* Results body */}
           <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
             {!selectedTask ? (
               <div style={{
@@ -447,7 +530,6 @@ export default function WorkspacePage() {
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                {/* Agent tag */}
                 {(() => {
                   const ag = AGENTS.find(a => a.id === selectedTask.agent_type)!;
                   return (
@@ -462,7 +544,6 @@ export default function WorkspacePage() {
                   );
                 })()}
 
-                {/* Task input */}
                 <div style={{
                   backgroundColor: "#0A0A0A", border: "1px solid #1A1A1A",
                   borderRadius: "6px", padding: "10px 12px",
@@ -473,31 +554,49 @@ export default function WorkspacePage() {
                   </p>
                 </div>
 
-                {/* Output */}
                 {selectedTask.status === "running" && (
                   <div style={{ textAlign: "center", padding: "24px 0" }}>
-                    <div style={{ fontFamily: mono, fontSize: "12px", color: "#F59E0B" }}>
-                      Agent is working…
+                    <div style={{ fontFamily: mono, fontSize: "12px", color: "#F59E0B", marginBottom: "12px" }}>
+                      Scout is researching…
                     </div>
                     <div style={{
-                      display: "inline-block", marginTop: "12px",
-                      width: "6px", height: "6px", borderRadius: "50%",
-                      backgroundColor: "#F59E0B",
-                      animation: "pulse 1.2s ease-in-out infinite",
+                      display: "inline-block", width: "6px", height: "6px", borderRadius: "50%",
+                      backgroundColor: "#F59E0B", animation: "pulse 1.2s ease-in-out infinite",
                     }} />
                   </div>
                 )}
 
-                {selectedTask.output && (
+                {selectedTask.status === "error" && selectedTask.output && (
+                  <div style={{
+                    backgroundColor: "#1A0000", border: "1px solid #3A0000",
+                    borderRadius: "6px", padding: "12px",
+                  }}>
+                    <p style={{ fontFamily: mono, fontSize: "11px", color: "#EF4444", margin: "0 0 8px" }}>Error</p>
+                    <pre style={{ fontFamily: mono, fontSize: "12px", color: "#FF8888", margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+                      {selectedTask.output}
+                    </pre>
+                    {selectedTask.output.includes("API key") && (
+                      <button
+                        onClick={() => router.push("/settings")}
+                        style={{
+                          marginTop: "12px", padding: "8px 16px", borderRadius: "4px",
+                          backgroundColor: "#FFF", color: "#000", border: "none",
+                          fontFamily: mono, fontSize: "12px", cursor: "pointer", fontWeight: 600,
+                        }}
+                      >Go to Settings →</button>
+                    )}
+                  </div>
+                )}
+
+                {selectedTask.output && selectedTask.status !== "error" && (
                   <div style={{
                     backgroundColor: "#080808", border: "1px solid #1A1A1A",
                     borderRadius: "6px", padding: "12px",
                   }}>
                     <p style={{ fontFamily: mono, fontSize: "11px", color: "#555", margin: "0 0 8px" }}>Output</p>
-                    <pre style={{
-                      fontFamily: mono, fontSize: "12px", color: "#DDD",
-                      margin: 0, whiteSpace: "pre-wrap", lineHeight: "1.7",
-                    }}>{selectedTask.output}</pre>
+                    <pre style={{ fontFamily: mono, fontSize: "12px", color: "#DDD", margin: 0, whiteSpace: "pre-wrap", lineHeight: "1.7" }}>
+                      {selectedTask.output}
+                    </pre>
                   </div>
                 )}
               </div>

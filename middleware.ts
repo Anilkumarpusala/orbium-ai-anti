@@ -47,7 +47,11 @@ export async function middleware(request: NextRequest) {
       }
     } else {
       // Not logged in
-      if (url.pathname.startsWith("/workspace") || url.pathname.startsWith("/onboarding")) {
+      if (
+        url.pathname.startsWith("/workspace") ||
+        url.pathname.startsWith("/onboarding") ||
+        url.pathname.startsWith("/settings")
+      ) {
         console.log("Unauthorized access, redirecting to login");
         url.pathname = "/login";
         return NextResponse.redirect(url);
