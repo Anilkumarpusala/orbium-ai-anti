@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
     if (provider.includes("openrouter")) {
       output = await callOpenAICompat(
         apiKey, task,
-        "google/gemini-2.0-flash-001",
+        "google/gemini-2.0-flash-exp:free",
         "https://openrouter.ai/api/v1",
         {
           "HTTP-Referer": "https://orbium.ai",
