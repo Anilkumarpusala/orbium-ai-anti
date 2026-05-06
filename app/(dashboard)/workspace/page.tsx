@@ -317,6 +317,25 @@ export default function WorkspacePage() {
           })}
         </div>
 
+        {/* Settings link */}
+        <div style={{ padding: "4px 8px" }}>
+          <button
+            onClick={() => router.push("/settings")}
+            style={{
+              width: "100%", display: "flex", alignItems: "center", gap: "8px",
+              padding: "9px 12px", borderRadius: "6px", cursor: "pointer",
+              backgroundColor: "transparent", border: "none",
+              color: "#888888", fontFamily: mono, fontSize: "13px",
+              transition: "background-color 0.15s ease",
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#0D0D0D"; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
+          >
+            <span style={{ fontSize: "14px" }}>⚙️</span>
+            Settings
+          </button>
+        </div>
+
         {/* New Task */}
         <div style={{ padding: "12px 8px", borderTop: "1px solid #111" }}>
           <button
@@ -372,11 +391,23 @@ export default function WorkspacePage() {
           <span style={{ fontFamily: mono, fontSize: "12px", color: "#555" }}>— {agent.role}</span>
           {activeAgent === "scout" && (
             <span style={{
-              marginLeft: "auto", fontFamily: mono, fontSize: "10px",
+              fontFamily: mono, fontSize: "10px",
               color: "#333", padding: "2px 8px", borderRadius: "999px",
               border: "1px solid #1A1A1A",
             }}>Live ⚡</span>
           )}
+          <button
+            onClick={() => router.push("/settings")}
+            title="Settings"
+            style={{
+              marginLeft: "auto", background: "none", border: "none",
+              color: "#555", cursor: "pointer", fontSize: "16px",
+              padding: "4px 8px", borderRadius: "4px",
+              transition: "color 0.15s ease",
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "#FFF"; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "#555"; }}
+          >⚙️</button>
         </div>
 
         {/* Input */}
