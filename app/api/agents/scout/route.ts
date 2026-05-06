@@ -16,50 +16,90 @@ Be specific, actionable, and thorough.
 Never make up emails — say "Find via LinkedIn" if unknown.
 Always return at least 5-10 results for lead requests.`;
 
-// ─── Helper: call Gemini ───────────────────────────────────────────────────────
-async function callGemini(apiKey: string, task: string): Promise<string> {
-  const { GoogleGenerativeAI } = await import("@google/generative-ai");
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
-    systemInstruction: SCOUT_SYSTEM_PROMPT,
-  });
-  const result = await model.generateContent(task);
-  return result.response.text();
-}
+// ─── All providers via native fetch (no SDK dependencies) ──────────────────────
 
-// ─── Helper: call OpenAI-compatible APIs ───────────────────────────────────────
 async function callOpenAICompat(
   apiKey: string,
   task: string,
   model: string,
-  baseURL?: string
+  baseURL: string,
+  extraHeaders: Record<string, string> = {}
 ): Promise<string> {
-  const OpenAI = (await import("openai")).default;
-  const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
-  const response = await client.chat.completions.create({
-    model,
-    messages: [
-      { role: "system", content: SCOUT_SYSTEM_PROMPT },
-      { role: "user", content: task },
-    ],
-    max_tokens: 2048,
+  const res = await fetch(`${baseURL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      ...extraHeaders,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: SCOUT_SYSTEM_PROMPT },
+        { role: "user", content: task },
+      ],
+      max_tokens: 2048,
+    }),
   });
-  return response.choices[0]?.message?.content ?? "No response received.";
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`API error ${res.status}: ${errText}`);
+  }
+
+  const json = await res.json();
+  const content = json?.choices?.[0]?.message?.content;
+  if (!content) throw new Error("No content in response");
+  return content;
 }
 
-// ─── Helper: call Anthropic ───────────────────────────────────────────────────
-async function callClaude(apiKey: string, task: string): Promise<string> {
-  const Anthropic = (await import("@anthropic-ai/sdk")).default;
-  const client = new Anthropic({ apiKey });
-  const message = await client.messages.create({
-    model: "claude-haiku-3-5",
-    max_tokens: 2048,
-    system: SCOUT_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: task }],
+async function callGemini(apiKey: string, task: string): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: SCOUT_SYSTEM_PROMPT }] },
+      contents: [{ parts: [{ text: task }] }],
+    }),
   });
-  const block = message.content[0];
-  return block.type === "text" ? block.text : "No response received.";
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Gemini API error ${res.status}: ${errText}`);
+  }
+
+  const json = await res.json();
+  const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("No content in Gemini response");
+  return text;
+}
+
+async function callClaude(apiKey: string, task: string): Promise<string> {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-3-5",
+      max_tokens: 2048,
+      system: SCOUT_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: task }],
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Claude API error ${res.status}: ${errText}`);
+  }
+
+  const json = await res.json();
+  const text = json?.content?.[0]?.text;
+  if (!text) throw new Error("No content in Claude response");
+  return text;
 }
 
 // ─── Route Handler ─────────────────────────────────────────────────────────────
@@ -106,13 +146,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (!profile.encrypted_api_key) {
-      return NextResponse.json(
-        { error: "NO_API_KEY" },
-        { status: 422 }
-      );
+      return NextResponse.json({ error: "NO_API_KEY" }, { status: 422 });
     }
 
-    // Decode key (stored as base64 from onboarding)
+    // Decode key (stored as base64 from onboarding / settings)
     let apiKey: string;
     try {
       apiKey = Buffer.from(profile.encrypted_api_key, "base64").toString("utf-8");
@@ -121,27 +158,34 @@ export async function POST(request: NextRequest) {
     }
 
     const provider = (profile.api_provider ?? "").toLowerCase();
-
-    // Call LLM based on provider
     let output: string;
-    if (provider.includes("gemini")) {
-      output = await callGemini(apiKey, task);
+
+    if (provider.includes("openrouter")) {
+      output = await callOpenAICompat(
+        apiKey, task,
+        "google/gemini-flash-1.5",
+        "https://openrouter.ai/api/v1",
+        {
+          "HTTP-Referer": "https://orbium.ai",
+          "X-Title": "Orbium AI",
+        }
+      );
     } else if (provider.includes("openai")) {
-      output = await callOpenAICompat(apiKey, task, "gpt-4o-mini");
-    } else if (provider.includes("claude")) {
-      output = await callClaude(apiKey, task);
+      output = await callOpenAICompat(
+        apiKey, task,
+        "gpt-4o-mini",
+        "https://api.openai.com/v1"
+      );
     } else if (provider.includes("groq")) {
       output = await callOpenAICompat(
-        apiKey, task, "llama-3.1-8b-instant",
+        apiKey, task,
+        "llama-3.1-8b-instant",
         "https://api.groq.com/openai/v1"
       );
-    } else if (provider.includes("openrouter")) {
-      output = await callOpenAICompat(
-        apiKey, task, "google/gemini-flash-1.5",
-        "https://openrouter.ai/api/v1"
-      );
+    } else if (provider.includes("claude")) {
+      output = await callClaude(apiKey, task);
     } else {
-      // Default to Gemini if unclear
+      // Gemini (default / "gemini (free ✨)")
       output = await callGemini(apiKey, task);
     }
 
