@@ -1,15 +1,14 @@
 import { cookies } from "next/headers";
 import { createClient } from "@/utils/supabase/server";
 
-const SYSTEM_PROMPT = `You are Scout, elite research and lead generation agent for Orbium AI.
-Help founders find leads, research markets and analyze competitors.
-For lead requests always return:
-1. Company Name, City
-   Contact: Name, Title
-   Email: real email or Find via LinkedIn
-   Why: specific reason they need help
-Return 8-10 leads minimum.
-Be specific, never make up emails.`;
+const SYSTEM_PROMPT = `You are Aria, elite content and marketing agent for Orbium AI.
+Create content that attracts customers.
+For LinkedIn return:
+HOOK: first attention-grabbing line
+BODY: 3-5 short punchy paragraphs
+CTA: clear call to action
+For content strategy: return 30 day calendar with specific post ideas for each week.
+Match founder voice. Never generic.`;
 
 async function callLLM(
   provider: string,
@@ -145,7 +144,7 @@ export async function POST(req: Request) {
     return Response.json({ output });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Unknown error";
-    console.error("Scout error:", msg);
+    console.error("Aria error:", msg);
     return Response.json({ error: msg }, { status: 500 });
   }
 }

@@ -1,20 +1,43 @@
 import { cookies } from "next/headers";
 import { createClient } from "@/utils/supabase/server";
 
-const SYSTEM_PROMPT = `You are Scout, elite research and lead generation agent for Orbium AI.
+const SYSTEM_PROMPTS: Record<string, string> = {
+  scout: `You are Scout, elite research and lead generation agent for Orbium AI.
 Help founders find leads, research markets and analyze competitors.
 For lead requests always return:
 1. Company Name, City
    Contact: Name, Title
    Email: real email or Find via LinkedIn
    Why: specific reason they need help
-Return 8-10 leads minimum.
-Be specific, never make up emails.`;
+Return 8-10 leads minimum. Be specific, never make up emails.`,
+
+  rex: `You are Rex, elite sales outreach agent for Orbium AI.
+Write cold emails and sequences that get replies.
+Never sound like a template. Always personalize based on lead info.
+Return exactly:
+SUBJECT: subject line here
+EMAIL:
+full email body here
+FOLLOW-UP 1 (Day 3):
+short followup here
+FOLLOW-UP 2 (Day 7):
+final followup here`,
+
+  aria: `You are Aria, elite content and marketing agent for Orbium AI.
+Create content that attracts customers.
+For LinkedIn return:
+HOOK: first attention-grabbing line
+BODY: 3-5 short punchy paragraphs
+CTA: clear call to action
+For content strategy: return 30 day calendar with specific post ideas for each week.
+Match founder voice. Never generic.`,
+};
 
 async function callLLM(
   provider: string,
   apiKey: string,
-  task: string
+  task: string,
+  systemPrompt: string
 ): Promise<string> {
   if (provider === "openrouter") {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -28,7 +51,7 @@ async function callLLM(
       body: JSON.stringify({
         model: "google/gemini-2.0-flash-exp:free",
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: systemPrompt },
           { role: "user", content: task },
         ],
       }),
@@ -45,7 +68,7 @@ async function callLLM(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: SYSTEM_PROMPT + "\n\n" + task }] }],
+          contents: [{ parts: [{ text: systemPrompt + "\n\n" + task }] }],
         }),
       }
     );
@@ -59,8 +82,7 @@ async function callLLM(
       provider === "groq"
         ? "https://api.groq.com/openai/v1"
         : "https://api.openai.com/v1";
-    const model =
-      provider === "groq" ? "llama-3.1-8b-instant" : "gpt-4o-mini";
+    const model = provider === "groq" ? "llama-3.1-8b-instant" : "gpt-4o-mini";
     const res = await fetch(`${baseURL}/chat/completions`, {
       method: "POST",
       headers: {
@@ -70,7 +92,7 @@ async function callLLM(
       body: JSON.stringify({
         model,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: systemPrompt },
           { role: "user", content: task },
         ],
       }),
@@ -91,7 +113,7 @@ async function callLLM(
       body: JSON.stringify({
         model: "claude-haiku-3-5",
         max_tokens: 2048,
-        system: SYSTEM_PROMPT,
+        system: systemPrompt,
         messages: [{ role: "user", content: task }],
       }),
     });
@@ -105,47 +127,63 @@ async function callLLM(
 
 export async function POST(req: Request) {
   try {
-    const { task, userId } = await req.json();
+    const body = await req.json();
+    const { agent, task, apiKey, provider } = body as {
+      agent: string;
+      task: string;
+      apiKey: string;
+      provider: string;
+    };
 
-    if (!task || !userId) {
-      return Response.json({ error: "Missing task or userId" }, { status: 400 });
+    if (!agent || !task || !apiKey || !provider) {
+      return Response.json(
+        { error: "Missing required fields: agent, task, apiKey, provider" },
+        { status: 400 }
+      );
     }
 
-    const cookieStore = cookies();
-    const supabase = createClient(cookieStore);
-
-    const { data: profile } = await supabase
-      .from("user_profiles")
-      .select("api_provider, encrypted_api_key, tasks_used, tasks_limit")
-      .eq("user_id", userId)
-      .single();
-
-    if (!profile?.encrypted_api_key) {
-      return Response.json({ error: "NO_API_KEY" }, { status: 400 });
+    const agentKey = agent.toLowerCase();
+    const systemPrompt = SYSTEM_PROMPTS[agentKey];
+    if (!systemPrompt) {
+      return Response.json(
+        { error: `Unknown agent: ${agent}. Use scout, rex, or aria.` },
+        { status: 400 }
+      );
     }
 
-    const tasksUsed = profile.tasks_used ?? 0;
-    const tasksLimit = profile.tasks_limit ?? 10;
-    if (tasksUsed >= tasksLimit) {
-      return Response.json({ error: "LIMIT_REACHED" }, { status: 403 });
+    const output = await callLLM(
+      provider.toLowerCase().trim(),
+      apiKey.trim(),
+      task,
+      systemPrompt
+    );
+
+    // Best-effort: log to tasks table if we can identify user from session
+    try {
+      const cookieStore = cookies();
+      const supabase = createClient(cookieStore);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        await supabase.from("tasks").insert({
+          user_id: session.user.id,
+          agent_type: agentKey,
+          input: task,
+          output,
+          status: "done",
+        });
+      }
+    } catch {
+      // Non-fatal — external callers may not have session cookies
     }
 
-    const apiKey = Buffer.from(profile.encrypted_api_key, "base64")
-      .toString("utf-8")
-      .trim();
-    const provider = (profile.api_provider ?? "").toLowerCase().trim();
-
-    const output = await callLLM(provider, apiKey, task);
-
-    await supabase
-      .from("user_profiles")
-      .update({ tasks_used: tasksUsed + 1 })
-      .eq("user_id", userId);
-
-    return Response.json({ output });
+    return Response.json({
+      output,
+      agent: agentKey,
+      timestamp: new Date().toISOString(),
+    });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Unknown error";
-    console.error("Scout error:", msg);
+    console.error("/api/run error:", msg);
     return Response.json({ error: msg }, { status: 500 });
   }
 }
