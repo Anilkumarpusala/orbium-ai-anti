@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 
 // ─── Provider list ─────────────────────────────────────────────────────────────
@@ -75,6 +75,7 @@ const OR_GROUPS = [...new Set(OR_MODELS.map(m => m.group))];
 
 export default function SettingsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
 
   const [userEmail, setUserEmail]             = useState("");
@@ -90,11 +91,30 @@ export default function SettingsPage() {
   const [testing, setTesting]                 = useState(false);
   const [saveMsg, setSaveMsg]                 = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [testResult, setTestResult]           = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [connectingOR, setConnectingOR]        = useState(false);
 
   const mono = "var(--font-jetbrains), monospace";
   const syne = "var(--font-syne), sans-serif";
 
   useEffect(() => {
+    // Handle OAuth callback result from URL params
+    const orConnected = searchParams.get("or_connected");
+    const orError     = searchParams.get("or_error");
+    if (orConnected === "true") {
+      setSaveMsg({ type: "success", text: "✓ OpenRouter connected! Your account is now linked." });
+      window.history.replaceState({}, "", "/settings");
+    } else if (orError) {
+      const errMessages: Record<string, string> = {
+        no_code:         "OAuth failed — no code received from OpenRouter.",
+        exchange_failed: "Failed to exchange code for API key. Try again.",
+        no_key_returned: "OpenRouter did not return a key. Try again.",
+        save_failed:     "Key received but failed to save. Try manual entry.",
+        network:         "Network error during OAuth. Try again.",
+      };
+      setSaveMsg({ type: "error", text: errMessages[orError] ?? "OpenRouter connection failed." });
+      window.history.replaceState({}, "", "/settings");
+    }
+
     async function load() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { router.push("/login"); return; }
@@ -120,6 +140,12 @@ export default function SettingsPage() {
     load();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleConnectOpenRouter = () => {
+    setConnectingOR(true);
+    const callbackUrl = `${window.location.origin}/api/auth/openrouter/callback`;
+    window.location.href = `https://openrouter.ai/auth?callback_url=${encodeURIComponent(callbackUrl)}`;
+  };
 
   const handleSave = async () => {
     if (!apiKey.trim()) { setSaveMsg({ type: "error", text: "Please enter an API key." }); return; }
@@ -221,10 +247,44 @@ export default function SettingsPage() {
         <h1 style={{ fontFamily: syne, fontSize: "28px", fontWeight: 700, margin: "0 0 8px" }}>Settings</h1>
         <p style={{ color: "#555", margin: "0 0 40px", fontSize: "14px" }}>Manage your API keys and model preferences.</p>
 
+        {/* ── OpenRouter OAuth card ────────────────────────────────────────── */}
+        <div style={{ backgroundColor: "#080808", border: "1px solid #1A1A1A", borderRadius: "8px", padding: "24px", marginBottom: "16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
+            <h2 style={{ fontFamily: syne, fontSize: "18px", fontWeight: 600, margin: 0 }}>Connect with OpenRouter</h2>
+            <span style={{ fontSize: "11px", backgroundColor: "#002A12", color: "#22C55E", border: "1px solid #22C55E", padding: "2px 8px", borderRadius: "999px" }}>Recommended</span>
+          </div>
+          <p style={{ color: "#555", fontSize: "13px", margin: "0 0 20px", lineHeight: 1.6 }}>
+            One click — no copy-pasting. Log in with your OpenRouter account and we&apos;ll link it automatically.
+            Uses your own credits. 300+ models. Always free to connect.
+          </p>
+
+          <button
+            onClick={handleConnectOpenRouter}
+            disabled={connectingOR}
+            style={{ display: "flex", alignItems: "center", gap: "10px", padding: "13px 24px", borderRadius: "8px", backgroundColor: connectingOR ? "#111" : "#060606", color: connectingOR ? "#555" : "#FFF", border: "1px solid #333", cursor: connectingOR ? "not-allowed" : "pointer", fontFamily: mono, fontSize: "14px", fontWeight: 600, transition: "all 0.2s", width: "100%", justifyContent: "center" }}
+            onMouseEnter={e => { if (!connectingOR) (e.currentTarget as HTMLButtonElement).style.borderColor = "#06B6D4"; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#333"; }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            {connectingOR ? "Redirecting to OpenRouter…" : "Connect with OpenRouter →"}
+          </button>
+
+          <p style={{ fontSize: "11px", color: "#444", margin: "12px 0 0", textAlign: "center" }}>
+            You&apos;ll be taken to openrouter.ai → log in → redirected back here automatically.
+          </p>
+        </div>
+
+        {/* divider */}
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
+          <div style={{ flex: 1, height: "1px", backgroundColor: "#1A1A1A" }} />
+          <span style={{ fontFamily: mono, fontSize: "11px", color: "#444" }}>or enter key manually</span>
+          <div style={{ flex: 1, height: "1px", backgroundColor: "#1A1A1A" }} />
+        </div>
+
         {/* ── API Keys card ───────────────────────────────────────────────── */}
         <div style={{ backgroundColor: "#080808", border: "1px solid #1A1A1A", borderRadius: "8px", padding: "24px", marginBottom: "20px" }}>
-          <h2 style={{ fontFamily: syne, fontSize: "18px", fontWeight: 600, margin: "0 0 6px" }}>API Keys</h2>
-          <p style={{ color: "#555", fontSize: "13px", margin: "0 0 20px", lineHeight: 1.6 }}>Your key is base64-encoded before storing. Never shared or logged.</p>
+          <h2 style={{ fontFamily: syne, fontSize: "18px", fontWeight: 600, margin: "0 0 6px" }}>Manual API Key</h2>
+          <p style={{ color: "#555", fontSize: "13px", margin: "0 0 20px", lineHeight: 1.6 }}>Paste your key from any provider below. Base64-encoded before storing. Never shared or logged.</p>
 
           {/* Active key status */}
           {currentProvider && currentHint ? (
