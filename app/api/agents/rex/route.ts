@@ -16,7 +16,8 @@ final followup here`;
 async function callLLM(
   provider: string,
   apiKey: string,
-  task: string
+  task: string,
+  orModel = "meta-llama/llama-3.3-70b-instruct:free"
 ): Promise<string> {
   if (provider === "openrouter") {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -28,7 +29,7 @@ async function callLLM(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "meta-llama/llama-3.1-8b-instruct:free",
+        model: orModel,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: task },
@@ -118,7 +119,7 @@ export async function POST(req: Request) {
 
     const { data: profile } = await supabase
       .from("user_profiles")
-      .select("api_provider, encrypted_api_key, tasks_used, tasks_limit")
+      .select("api_provider, encrypted_api_key, tasks_used, tasks_limit, openrouter_model")
       .eq("user_id", userId)
       .single();
 
@@ -136,8 +137,9 @@ export async function POST(req: Request) {
       .toString("utf-8")
       .trim();
     const provider = (profile.api_provider ?? "").toLowerCase().trim();
+    const orModel = (profile.openrouter_model ?? "meta-llama/llama-3.3-70b-instruct:free").trim();
 
-    const output = await callLLM(provider, apiKey, task);
+    const output = await callLLM(provider, apiKey, task, orModel);
 
     await supabase
       .from("user_profiles")
