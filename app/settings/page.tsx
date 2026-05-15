@@ -4,116 +4,99 @@ import React, { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 
-// ─── Provider list ─────────────────────────────────────────────────────────────
+// ─── Provider definitions ──────────────────────────────────────────────────────
 const PROVIDERS = [
-  { value: "openrouter", label: "OpenRouter (recommended)" },
-  { value: "gemini",     label: "Google Gemini" },
-  { value: "openai",     label: "OpenAI" },
-  { value: "groq",       label: "Groq" },
-  { value: "claude",     label: "Anthropic Claude" },
+  { value: "gemini",  label: "Google Gemini",    icon: "🌐", color: "#4285F4" },
+  { value: "claude",  label: "Anthropic Claude",  icon: "🔮", color: "#D4A853" },
+  { value: "openai",  label: "OpenAI ChatGPT",    icon: "🤖", color: "#10A37F" },
+  { value: "meta",    label: "Meta AI (Ollama)",  icon: "🦙", color: "#0668E1" },
 ];
 
-// ─── OpenRouter model catalogue (free + paid, 40+ models) ─────────────────────
-// Source: openrouter.ai/models  (updated May 2025)
-const OR_MODELS = [
-  // ── Free tier (:free suffix = no credits needed) ─────────────────────────
-  { group: "🆓 Free Models",           value: "meta-llama/llama-3.3-70b-instruct:free",     label: "Llama 3.3 70B Instruct (free)" },
-  { group: "🆓 Free Models",           value: "meta-llama/llama-3.1-8b-instruct:free",      label: "Llama 3.1 8B Instruct (free)" },
-  { group: "🆓 Free Models",           value: "meta-llama/llama-3.2-3b-instruct:free",      label: "Llama 3.2 3B Instruct (free)" },
-  { group: "🆓 Free Models",           value: "deepseek/deepseek-r1:free",                  label: "DeepSeek R1 (free)" },
-  { group: "🆓 Free Models",           value: "deepseek/deepseek-chat-v3-0324:free",        label: "DeepSeek Chat V3 (free)" },
-  { group: "🆓 Free Models",           value: "google/gemma-3-27b-it:free",                 label: "Google Gemma 3 27B (free)" },
-  { group: "🆓 Free Models",           value: "google/gemma-3-12b-it:free",                 label: "Google Gemma 3 12B (free)" },
-  { group: "🆓 Free Models",           value: "google/gemma-3-4b-it:free",                  label: "Google Gemma 3 4B (free)" },
-  { group: "🆓 Free Models",           value: "mistralai/mistral-7b-instruct:free",         label: "Mistral 7B Instruct (free)" },
-  { group: "🆓 Free Models",           value: "mistralai/mistral-small-3.1-24b-instruct:free", label: "Mistral Small 3.1 24B (free)" },
-  { group: "🆓 Free Models",           value: "qwen/qwen3-8b:free",                         label: "Qwen 3 8B (free)" },
-  { group: "🆓 Free Models",           value: "qwen/qwen3-14b:free",                        label: "Qwen 3 14B (free)" },
-  { group: "🆓 Free Models",           value: "qwen/qwen3-32b:free",                        label: "Qwen 3 32B (free)" },
-  { group: "🆓 Free Models",           value: "qwen/qwen-2.5-72b-instruct:free",            label: "Qwen 2.5 72B (free)" },
-  { group: "🆓 Free Models",           value: "microsoft/phi-4:free",                       label: "Microsoft Phi-4 (free)" },
-  { group: "🆓 Free Models",           value: "nvidia/llama-3.1-nemotron-70b-instruct:free",label: "NVIDIA Nemotron 70B (free)" },
-  // ── OpenAI ────────────────────────────────────────────────────────────────
-  { group: "🤖 OpenAI",                value: "openai/gpt-4o",                              label: "GPT-4o" },
-  { group: "🤖 OpenAI",                value: "openai/gpt-4o-mini",                         label: "GPT-4o Mini" },
-  { group: "🤖 OpenAI",                value: "openai/gpt-4-turbo",                         label: "GPT-4 Turbo" },
-  { group: "🤖 OpenAI",                value: "openai/o1",                                  label: "OpenAI o1" },
-  { group: "🤖 OpenAI",                value: "openai/o3-mini",                             label: "OpenAI o3 Mini" },
-  // ── Anthropic Claude ──────────────────────────────────────────────────────
-  { group: "🔮 Anthropic",             value: "anthropic/claude-3.7-sonnet",                label: "Claude 3.7 Sonnet" },
-  { group: "🔮 Anthropic",             value: "anthropic/claude-3.5-sonnet",                label: "Claude 3.5 Sonnet" },
-  { group: "🔮 Anthropic",             value: "anthropic/claude-3.5-haiku",                 label: "Claude 3.5 Haiku" },
-  { group: "🔮 Anthropic",             value: "anthropic/claude-3-opus",                    label: "Claude 3 Opus" },
-  // ── Google ────────────────────────────────────────────────────────────────
-  { group: "🌐 Google",                value: "google/gemini-2.0-flash-001",                label: "Gemini 2.0 Flash" },
-  { group: "🌐 Google",                value: "google/gemini-2.5-pro-preview",              label: "Gemini 2.5 Pro Preview" },
-  { group: "🌐 Google",                value: "google/gemini-flash-1.5",                    label: "Gemini 1.5 Flash" },
-  { group: "🌐 Google",                value: "google/gemini-pro-1.5",                      label: "Gemini 1.5 Pro" },
-  // ── Meta Llama (paid) ─────────────────────────────────────────────────────
-  { group: "🦙 Meta Llama",            value: "meta-llama/llama-3.3-70b-instruct",          label: "Llama 3.3 70B" },
-  { group: "🦙 Meta Llama",            value: "meta-llama/llama-3.1-405b-instruct",         label: "Llama 3.1 405B" },
-  { group: "🦙 Meta Llama",            value: "meta-llama/llama-3.1-70b-instruct",          label: "Llama 3.1 70B" },
-  // ── Mistral ───────────────────────────────────────────────────────────────
-  { group: "🌊 Mistral",               value: "mistralai/mistral-large",                    label: "Mistral Large" },
-  { group: "🌊 Mistral",               value: "mistralai/mistral-medium-3",                 label: "Mistral Medium 3" },
-  { group: "🌊 Mistral",               value: "mistralai/mixtral-8x22b-instruct",           label: "Mixtral 8x22B" },
-  // ── DeepSeek ──────────────────────────────────────────────────────────────
-  { group: "🔍 DeepSeek",              value: "deepseek/deepseek-r1",                       label: "DeepSeek R1" },
-  { group: "🔍 DeepSeek",              value: "deepseek/deepseek-chat-v3-0324",             label: "DeepSeek Chat V3" },
-  // ── xAI Grok ──────────────────────────────────────────────────────────────
-  { group: "⚡ xAI",                   value: "x-ai/grok-3-beta",                          label: "Grok 3 Beta" },
-  { group: "⚡ xAI",                   value: "x-ai/grok-3-mini-beta",                     label: "Grok 3 Mini Beta" },
-  // ── Cohere ────────────────────────────────────────────────────────────────
-  { group: "📡 Cohere",                value: "cohere/command-r-plus",                      label: "Command R+" },
-  { group: "📡 Cohere",                value: "cohere/command-r7b-12-2024",                 label: "Command R7B" },
-  // ── Qwen (paid) ───────────────────────────────────────────────────────────
-  { group: "🔡 Qwen",                  value: "qwen/qwen3-235b-a22b",                       label: "Qwen 3 235B" },
-  { group: "🔡 Qwen",                  value: "qwen/qwen-2.5-72b-instruct",                 label: "Qwen 2.5 72B" },
-];
+// ─── Model catalogues ──────────────────────────────────────────────────────────
+const MODELS: Record<string, { value: string; label: string }[]> = {
+  gemini: [
+    { value: "gemini-2.5-flash-preview-04-17", label: "Gemini 2.5 Flash Preview (Latest)" },
+    { value: "gemini-2.5-pro-preview-05-06",   label: "Gemini 2.5 Pro Preview" },
+    { value: "gemini-2.0-flash",               label: "Gemini 2.0 Flash" },
+    { value: "gemini-2.0-flash-lite",          label: "Gemini 2.0 Flash Lite" },
+    { value: "gemini-1.5-flash",               label: "Gemini 1.5 Flash" },
+    { value: "gemini-1.5-flash-8b",            label: "Gemini 1.5 Flash 8B" },
+    { value: "gemini-1.5-pro",                 label: "Gemini 1.5 Pro" },
+  ],
+  claude: [
+    { value: "claude-opus-4-5",              label: "Claude Opus 4.5 (Latest)" },
+    { value: "claude-3-7-sonnet-20250219",   label: "Claude 3.7 Sonnet" },
+    { value: "claude-3-5-sonnet-20241022",   label: "Claude 3.5 Sonnet" },
+    { value: "claude-3-5-haiku-20241022",    label: "Claude 3.5 Haiku" },
+    { value: "claude-3-opus-20240229",       label: "Claude 3 Opus" },
+    { value: "claude-3-sonnet-20240229",     label: "Claude 3 Sonnet" },
+    { value: "claude-3-haiku-20240307",      label: "Claude 3 Haiku" },
+  ],
+  openai: [
+    { value: "o4-mini",       label: "o4 Mini (Latest)" },
+    { value: "o3-mini",       label: "o3 Mini" },
+    { value: "o1",            label: "o1" },
+    { value: "o1-mini",       label: "o1 Mini" },
+    { value: "gpt-4o",        label: "GPT-4o" },
+    { value: "gpt-4o-mini",   label: "GPT-4o Mini" },
+    { value: "gpt-4-turbo",   label: "GPT-4 Turbo" },
+    { value: "gpt-4",         label: "GPT-4" },
+    { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
+  ],
+  meta: [
+    { value: "llama3.3:latest",   label: "Llama 3.3 70B (Recommended)" },
+    { value: "llama3.2:latest",   label: "Llama 3.2 (3B)" },
+    { value: "llama3.1:latest",   label: "Llama 3.1 8B" },
+    { value: "llama3:latest",     label: "Llama 3 8B" },
+    { value: "llama2:latest",     label: "Llama 2 7B" },
+    { value: "codellama:latest",  label: "Code Llama" },
+    { value: "custom",            label: "Custom model (enter below)" },
+  ],
+};
 
-const OR_GROUPS = [...new Set(OR_MODELS.map(m => m.group))];
+const DEFAULT_MODELS: Record<string, string> = {
+  gemini: "gemini-2.0-flash",
+  claude: "claude-3-5-haiku-20241022",
+  openai: "gpt-4o-mini",
+  meta:   "llama3.3:latest",
+};
 
 export default function SettingsPage() {
-  const router = useRouter();
+  const router       = useRouter();
   const searchParams = useSearchParams();
-  const supabase = createClient();
+  const supabase     = createClient();
 
-  const [userEmail, setUserEmail]             = useState("");
-  const [userId, setUserId]                   = useState("");
-  const [provider, setProvider]               = useState("openrouter");
-  const [apiKey, setApiKey]                   = useState("");
-  const [orModel, setOrModel]                 = useState("meta-llama/llama-3.3-70b-instruct:free");
-  const [currentHint, setCurrentHint]         = useState<string | null>(null);
+  const [userEmail, setUserEmail]       = useState("");
+  const [userId, setUserId]             = useState("");
+  const [provider, setProvider]         = useState("gemini");
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_MODELS.gemini);
+  const [customModel, setCustomModel]   = useState("");
+  const [apiKey, setApiKey]             = useState("");
+  const [ollamaUrl, setOllamaUrl]       = useState("http://localhost:11434");
+  const [currentHint, setCurrentHint]   = useState<string | null>(null);
   const [currentProvider, setCurrentProvider] = useState<string | null>(null);
-  const [currentModel, setCurrentModel]       = useState<string | null>(null);
-  const [saving, setSaving]                   = useState(false);
-  const [removing, setRemoving]               = useState(false);
-  const [testing, setTesting]                 = useState(false);
-  const [saveMsg, setSaveMsg]                 = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [testResult, setTestResult]           = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [connectingOR, setConnectingOR]        = useState(false);
+  const [currentModel, setCurrentModel] = useState<string | null>(null);
+  const [saving, setSaving]             = useState(false);
+  const [removing, setRemoving]         = useState(false);
+  const [testing, setTesting]           = useState(false);
+  const [saveMsg, setSaveMsg]           = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [testResult, setTestResult]     = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const mono = "var(--font-jetbrains), monospace";
   const syne = "var(--font-syne), sans-serif";
 
+  // When provider changes, reset model to default for that provider
+  const handleProviderChange = (p: string) => {
+    setProvider(p);
+    setSelectedModel(DEFAULT_MODELS[p] ?? MODELS[p]?.[0]?.value ?? "");
+    setSaveMsg(null);
+    setTestResult(null);
+  };
+
   useEffect(() => {
-    // Handle OAuth callback result from URL params
-    const orConnected = searchParams.get("or_connected");
-    const orError     = searchParams.get("or_error");
-    if (orConnected === "true") {
-      setSaveMsg({ type: "success", text: "✓ OpenRouter connected! Your account is now linked." });
-      window.history.replaceState({}, "", "/settings");
-    } else if (orError) {
-      const errMessages: Record<string, string> = {
-        no_code:         "OAuth failed — no code received from OpenRouter.",
-        exchange_failed: "Failed to exchange code for API key. Try again.",
-        no_key_returned: "OpenRouter did not return a key. Try again.",
-        save_failed:     "Key received but failed to save. Try manual entry.",
-        network:         "Network error during OAuth. Try again.",
-      };
-      setSaveMsg({ type: "error", text: errMessages[orError] ?? "OpenRouter connection failed." });
-      window.history.replaceState({}, "", "/settings");
-    }
+    // Handle URL params from OAuth redirects or other flows
+    const msg = searchParams.get("msg");
+    if (msg === "saved") setSaveMsg({ type: "success", text: "Settings saved successfully." });
 
     async function load() {
       const { data: { session } } = await supabase.auth.getSession();
@@ -123,49 +106,54 @@ export default function SettingsPage() {
 
       const { data: profile } = await supabase
         .from("user_profiles")
-        .select("api_provider, api_key_hint, openrouter_model")
+        .select("api_provider, api_key_hint, selected_model, ollama_base_url")
         .eq("user_id", session.user.id)
         .single();
 
       if (profile) {
-        const p = (profile.api_provider ?? "").toLowerCase().trim();
-        setCurrentProvider(p || null);
+        const p = (profile.api_provider ?? "gemini").toLowerCase().trim();
+        setCurrentProvider(p);
         setCurrentHint(profile.api_key_hint ?? null);
-        const m = profile.openrouter_model ?? "meta-llama/llama-3.3-70b-instruct:free";
+        const m = profile.selected_model ?? DEFAULT_MODELS[p] ?? "";
         setCurrentModel(m);
-        setOrModel(m);
-        if (p) setProvider(p);
+        setSelectedModel(m);
+        setProvider(p);
+        if (profile.ollama_base_url) setOllamaUrl(profile.ollama_base_url);
       }
     }
     load();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleConnectOpenRouter = () => {
-    setConnectingOR(true);
-    const callbackUrl = `${window.location.origin}/api/auth/openrouter/callback`;
-    window.location.href = `https://openrouter.ai/auth?callback_url=${encodeURIComponent(callbackUrl)}`;
-  };
+  const effectiveModel = selectedModel === "custom" ? customModel.trim() : selectedModel;
 
   const handleSave = async () => {
-    if (!apiKey.trim()) { setSaveMsg({ type: "error", text: "Please enter an API key." }); return; }
+    const isMetaNoKey = provider === "meta"; // Meta/Ollama can work without an API key
+    if (!isMetaNoKey && !apiKey.trim() && !currentHint) {
+      setSaveMsg({ type: "error", text: "Please enter an API key." });
+      return;
+    }
+    if (provider === "meta" && selectedModel === "custom" && !customModel.trim()) {
+      setSaveMsg({ type: "error", text: "Please enter your custom Ollama model name." });
+      return;
+    }
     setSaving(true); setSaveMsg(null);
     try {
-      const encoded = btoa(apiKey.trim());
-      const hint    = apiKey.trim().slice(-4);
-      const patch: Record<string, string> = {
-        api_provider: provider,
-        encrypted_api_key: encoded,
-        api_key_hint: hint,
-        openrouter_model: orModel,
+      const patch: Record<string, string | null> = {
+        api_provider:   provider,
+        selected_model: effectiveModel,
+        ollama_base_url: ollamaUrl.trim() || "http://localhost:11434",
       };
+      if (apiKey.trim()) {
+        patch.encrypted_api_key = btoa(apiKey.trim());
+        patch.api_key_hint      = apiKey.trim().slice(-4);
+      }
 
       const { error, count } = await supabase
         .from("user_profiles")
         .update(patch)
         .eq("user_id", userId)
         .select("user_id", { count: "exact", head: true });
-
       if (error) throw error;
       if ((count ?? 0) === 0) {
         const { error: ie } = await supabase.from("user_profiles").insert({ user_id: userId, ...patch });
@@ -173,22 +161,13 @@ export default function SettingsPage() {
       }
 
       setCurrentProvider(provider);
-      setCurrentHint(hint);
-      setCurrentModel(orModel);
+      if (apiKey.trim()) setCurrentHint(apiKey.trim().slice(-4));
+      setCurrentModel(effectiveModel);
       setApiKey("");
       setSaveMsg({ type: "success", text: "Saved! Click \"Test Connection\" to verify." });
     } catch (err) {
       setSaveMsg({ type: "error", text: err instanceof Error ? err.message : "Failed to save" });
     } finally { setSaving(false); }
-  };
-
-  const handleSaveModel = async () => {
-    if (!userId) return;
-    const { error } = await supabase
-      .from("user_profiles")
-      .update({ openrouter_model: orModel })
-      .eq("user_id", userId);
-    if (!error) { setCurrentModel(orModel); setSaveMsg({ type: "success", text: "Model preference saved." }); }
   };
 
   const handleRemove = async () => {
@@ -219,10 +198,10 @@ export default function SettingsPage() {
       const json = await res.json();
       if (!res.ok) {
         const errMap: Record<string, string> = {
-          NO_API_KEY:    "No API key saved. Save your key first.",
+          NO_API_KEY:    "No API key saved. Save your settings first.",
           LIMIT_REACHED: "Task limit reached.",
         };
-        setTestResult({ type: "error", text: errMap[json.error] ?? (json.error || "Connection failed") });
+        setTestResult({ type: "error", text: errMap[json.error] ?? json.error ?? "Connection failed" });
       } else {
         setTestResult({ type: "success", text: "✓ Connected!   " + (json.output?.slice(0, 120) ?? "") });
       }
@@ -231,8 +210,8 @@ export default function SettingsPage() {
     } finally { setTesting(false); }
   };
 
-  const currentModelLabel = OR_MODELS.find(m => m.value === currentModel)?.label ?? currentModel;
-  const providerLabel     = PROVIDERS.find(p => p.value === currentProvider)?.label ?? currentProvider;
+  const currentProviderLabel = PROVIDERS.find(p => p.value === currentProvider)?.label ?? currentProvider;
+  const currentModelLabel    = MODELS[currentProvider ?? ""]?.find(m => m.value === currentModel)?.label ?? currentModel;
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#000", color: "#FFF", fontFamily: mono, display: "flex", flexDirection: "column" }}>
@@ -243,151 +222,153 @@ export default function SettingsPage() {
         <span style={{ fontSize: "12px", color: "#444" }}>{userEmail}</span>
       </div>
 
-      <div style={{ flex: 1, maxWidth: "600px", margin: "48px auto", padding: "0 24px", width: "100%", boxSizing: "border-box" }}>
+      <div style={{ flex: 1, maxWidth: "640px", margin: "48px auto", padding: "0 24px", width: "100%", boxSizing: "border-box" }}>
         <h1 style={{ fontFamily: syne, fontSize: "28px", fontWeight: 700, margin: "0 0 8px" }}>Settings</h1>
-        <p style={{ color: "#555", margin: "0 0 40px", fontSize: "14px" }}>Manage your API keys and model preferences.</p>
+        <p style={{ color: "#555", margin: "0 0 32px", fontSize: "14px" }}>Choose your AI provider and model.</p>
 
-        {/* ── OpenRouter OAuth card ────────────────────────────────────────── */}
-        <div style={{ backgroundColor: "#080808", border: "1px solid #1A1A1A", borderRadius: "8px", padding: "24px", marginBottom: "16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
-            <h2 style={{ fontFamily: syne, fontSize: "18px", fontWeight: 600, margin: 0 }}>Connect with OpenRouter</h2>
-            <span style={{ fontSize: "11px", backgroundColor: "#002A12", color: "#22C55E", border: "1px solid #22C55E", padding: "2px 8px", borderRadius: "999px" }}>Recommended</span>
-          </div>
-          <p style={{ color: "#555", fontSize: "13px", margin: "0 0 20px", lineHeight: 1.6 }}>
-            One click — no copy-pasting. Log in with your OpenRouter account and we&apos;ll link it automatically.
-            Uses your own credits. 300+ models. Always free to connect.
-          </p>
-
-          <button
-            onClick={handleConnectOpenRouter}
-            disabled={connectingOR}
-            style={{ display: "flex", alignItems: "center", gap: "10px", padding: "13px 24px", borderRadius: "8px", backgroundColor: connectingOR ? "#111" : "#060606", color: connectingOR ? "#555" : "#FFF", border: "1px solid #333", cursor: connectingOR ? "not-allowed" : "pointer", fontFamily: mono, fontSize: "14px", fontWeight: 600, transition: "all 0.2s", width: "100%", justifyContent: "center" }}
-            onMouseEnter={e => { if (!connectingOR) (e.currentTarget as HTMLButtonElement).style.borderColor = "#06B6D4"; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#333"; }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            {connectingOR ? "Redirecting to OpenRouter…" : "Connect with OpenRouter →"}
-          </button>
-
-          <p style={{ fontSize: "11px", color: "#444", margin: "12px 0 0", textAlign: "center" }}>
-            You&apos;ll be taken to openrouter.ai → log in → redirected back here automatically.
-          </p>
-        </div>
-
-        {/* divider */}
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
-          <div style={{ flex: 1, height: "1px", backgroundColor: "#1A1A1A" }} />
-          <span style={{ fontFamily: mono, fontSize: "11px", color: "#444" }}>or enter key manually</span>
-          <div style={{ flex: 1, height: "1px", backgroundColor: "#1A1A1A" }} />
-        </div>
-
-        {/* ── API Keys card ───────────────────────────────────────────────── */}
-        <div style={{ backgroundColor: "#080808", border: "1px solid #1A1A1A", borderRadius: "8px", padding: "24px", marginBottom: "20px" }}>
-          <h2 style={{ fontFamily: syne, fontSize: "18px", fontWeight: 600, margin: "0 0 6px" }}>Manual API Key</h2>
-          <p style={{ color: "#555", fontSize: "13px", margin: "0 0 20px", lineHeight: 1.6 }}>Paste your key from any provider below. Base64-encoded before storing. Never shared or logged.</p>
-
-          {/* Active key status */}
-          {currentProvider && currentHint ? (
-            <div style={{ backgroundColor: "#0A0A0A", border: "1px solid #1A1A1A", borderRadius: "6px", padding: "14px 16px", marginBottom: "20px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#22C55E", boxShadow: "0 0 6px #22C55E", flexShrink: 0 }} />
-                  <div>
-                    <p style={{ margin: 0, fontSize: "11px", color: "#555" }}>Active key</p>
-                    <p style={{ margin: "2px 0 0", fontSize: "13px", color: "#FFF" }}>{providerLabel} — <span style={{ color: "#555" }}>****{currentHint}</span></p>
-                  </div>
-                </div>
-                <button onClick={handleRemove} disabled={removing} style={{ padding: "6px 12px", borderRadius: "4px", backgroundColor: "transparent", color: removing ? "#555" : "#EF4444", border: "1px solid #3A0000", cursor: removing ? "not-allowed" : "pointer", fontFamily: mono, fontSize: "11px" }}>{removing ? "Removing…" : "Remove Key"}</button>
+        {/* ── Active key status ─────────────────────────────────────────────── */}
+        {currentProvider && (currentHint || currentProvider === "meta") ? (
+          <div style={{ backgroundColor: "#080808", border: "1px solid #1A1A1A", borderRadius: "8px", padding: "16px 20px", marginBottom: "20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#22C55E", boxShadow: "0 0 6px #22C55E" }} />
+              <div>
+                <p style={{ margin: 0, fontSize: "11px", color: "#555" }}>Active configuration</p>
+                <p style={{ margin: "3px 0 0", fontSize: "13px", color: "#FFF" }}>
+                  {currentProviderLabel}
+                  {currentHint && <span style={{ color: "#555" }}> — ****{currentHint}</span>}
+                  {currentModelLabel && <span style={{ color: "#888" }}> · {currentModelLabel}</span>}
+                </p>
               </div>
             </div>
-          ) : (
-            <div style={{ backgroundColor: "#0A0A0A", border: "1px solid #2A0000", borderRadius: "6px", padding: "12px 16px", marginBottom: "20px", display: "flex", alignItems: "center", gap: "10px" }}>
-              <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#EF4444", flexShrink: 0 }} />
-              <p style={{ margin: 0, fontSize: "13px", color: "#EF4444" }}>No API key set — add one below to run tasks.</p>
-            </div>
-          )}
+            <button onClick={handleRemove} disabled={removing} style={{ padding: "6px 12px", borderRadius: "4px", backgroundColor: "transparent", color: removing ? "#555" : "#EF4444", border: "1px solid #3A0000", cursor: removing ? "not-allowed" : "pointer", fontFamily: mono, fontSize: "11px" }}>{removing ? "Removing…" : "Remove Key"}</button>
+          </div>
+        ) : (
+          <div style={{ backgroundColor: "#0A0A0A", border: "1px solid #2A0000", borderRadius: "8px", padding: "14px 20px", marginBottom: "20px", display: "flex", alignItems: "center", gap: "10px" }}>
+            <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#EF4444" }} />
+            <p style={{ margin: 0, fontSize: "13px", color: "#EF4444" }}>No AI configured — set up a provider below to run tasks.</p>
+          </div>
+        )}
 
-          {/* Provider selector */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "16px" }}>
-            <label style={{ fontSize: "12px", color: "#888" }}>Provider</label>
-            <select value={provider} onChange={e => setProvider(e.target.value)} style={{ backgroundColor: "#0A0A0A", border: "1px solid #1A1A1A", color: "#FFF", padding: "12px 14px", fontFamily: mono, fontSize: "13px", borderRadius: "6px", outline: "none", appearance: "none", cursor: "pointer" }}>
-              {PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+        {/* ── Provider tabs ─────────────────────────────────────────────────── */}
+        <div style={{ backgroundColor: "#080808", border: "1px solid #1A1A1A", borderRadius: "8px", padding: "24px", marginBottom: "16px" }}>
+          <h2 style={{ fontFamily: syne, fontSize: "16px", fontWeight: 600, margin: "0 0 16px", color: "#888" }}>Select Provider</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "24px" }}>
+            {PROVIDERS.map(p => (
+              <button
+                key={p.value}
+                onClick={() => handleProviderChange(p.value)}
+                style={{
+                  padding: "14px 16px", borderRadius: "8px", border: `1px solid ${provider === p.value ? p.color : "#1A1A1A"}`,
+                  backgroundColor: provider === p.value ? `${p.color}15` : "#0A0A0A",
+                  color: provider === p.value ? "#FFF" : "#666",
+                  cursor: "pointer", fontFamily: mono, fontSize: "13px", fontWeight: provider === p.value ? 600 : 400,
+                  display: "flex", alignItems: "center", gap: "8px", transition: "all 0.15s",
+                }}
+              >
+                <span style={{ fontSize: "18px" }}>{p.icon}</span>
+                <span>{p.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* ── Model selector ─────────────────────────────────────────────── */}
+          <div style={{ marginBottom: "20px" }}>
+            <label style={{ fontSize: "12px", color: "#888", display: "block", marginBottom: "6px" }}>Model</label>
+            <select
+              value={selectedModel}
+              onChange={e => setSelectedModel(e.target.value)}
+              style={{ backgroundColor: "#0A0A0A", border: "1px solid #1A1A1A", color: "#FFF", padding: "12px 14px", fontFamily: mono, fontSize: "13px", borderRadius: "6px", outline: "none", appearance: "none", cursor: "pointer", width: "100%" }}
+            >
+              {(MODELS[provider] ?? []).map(m => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
             </select>
           </div>
 
-          {/* API Key input */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "8px" }}>
-            <label style={{ fontSize: "12px", color: "#888" }}>API Key{currentHint ? " (leave blank to keep current)" : ""}</label>
-            <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} onKeyDown={e => { if (e.key === "Enter") handleSave(); }} placeholder={currentHint ? `Current: ****${currentHint}` : "Paste your API key here"} style={{ backgroundColor: "#0A0A0A", border: "1px solid #1A1A1A", color: "#FFF", padding: "12px 14px", fontFamily: mono, fontSize: "13px", borderRadius: "6px", outline: "none", width: "100%", boxSizing: "border-box" }} />
-          </div>
-          <p style={{ fontSize: "11px", color: "#444", margin: "0 0 20px" }}>🔒 Base64-encoded before storing. Never logged or sent elsewhere.</p>
+          {/* Custom model name for Ollama */}
+          {provider === "meta" && selectedModel === "custom" && (
+            <div style={{ marginBottom: "20px" }}>
+              <label style={{ fontSize: "12px", color: "#888", display: "block", marginBottom: "6px" }}>Custom model name</label>
+              <input
+                value={customModel}
+                onChange={e => setCustomModel(e.target.value)}
+                placeholder="e.g. deepseek-r1:7b or phi4:latest"
+                style={{ backgroundColor: "#0A0A0A", border: "1px solid #1A1A1A", color: "#FFF", padding: "12px 14px", fontFamily: mono, fontSize: "13px", borderRadius: "6px", outline: "none", width: "100%", boxSizing: "border-box" }}
+              />
+            </div>
+          )}
 
+          {/* ── Ollama URL (Meta only) ─────────────────────────────────────── */}
+          {provider === "meta" && (
+            <div style={{ marginBottom: "20px" }}>
+              <label style={{ fontSize: "12px", color: "#888", display: "block", marginBottom: "6px" }}>Ollama Base URL</label>
+              <input
+                value={ollamaUrl}
+                onChange={e => setOllamaUrl(e.target.value)}
+                placeholder="http://localhost:11434"
+                style={{ backgroundColor: "#0A0A0A", border: "1px solid #1A1A1A", color: "#FFF", padding: "12px 14px", fontFamily: mono, fontSize: "13px", borderRadius: "6px", outline: "none", width: "100%", boxSizing: "border-box" }}
+              />
+              <p style={{ fontSize: "11px", color: "#444", margin: "6px 0 0", lineHeight: 1.6 }}>
+                🦙 Run <code style={{ color: "#888", backgroundColor: "#111", padding: "1px 4px", borderRadius: "3px" }}>ollama serve</code> locally, or provide a public URL (ngrok / Cloudflare tunnel).
+                API key is optional for local Ollama.
+              </p>
+            </div>
+          )}
+
+          {/* ── API Key (not shown for local Ollama) ──────────────────────── */}
+          {provider !== "meta" && (
+            <div style={{ marginBottom: "8px" }}>
+              <label style={{ fontSize: "12px", color: "#888", display: "block", marginBottom: "6px" }}>
+                API Key{currentHint && currentProvider === provider ? " (leave blank to keep current)" : ""}
+              </label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") handleSave(); }}
+                placeholder={currentHint && currentProvider === provider ? `Current key: ****${currentHint}` : "Paste your API key here"}
+                style={{ backgroundColor: "#0A0A0A", border: "1px solid #1A1A1A", color: "#FFF", padding: "12px 14px", fontFamily: mono, fontSize: "13px", borderRadius: "6px", outline: "none", width: "100%", boxSizing: "border-box" }}
+              />
+              <p style={{ fontSize: "11px", color: "#444", margin: "6px 0 0" }}>🔒 Base64-encoded before storing. Never logged or sent elsewhere.</p>
+            </div>
+          )}
+
+          {/* ── API Key links ──────────────────────────────────────────────── */}
+          <div style={{ marginBottom: "20px", marginTop: "8px" }}>
+            {provider === "gemini"  && <a href="https://aistudio.google.com/app/apikey"        target="_blank" rel="noopener noreferrer" style={{ fontSize: "11px", color: "#4285F4", textDecoration: "none" }}>Get Gemini API key at Google AI Studio →</a>}
+            {provider === "claude"  && <a href="https://console.anthropic.com/settings/keys"   target="_blank" rel="noopener noreferrer" style={{ fontSize: "11px", color: "#D4A853", textDecoration: "none" }}>Get Claude API key at Anthropic Console →</a>}
+            {provider === "openai"  && <a href="https://platform.openai.com/api-keys"          target="_blank" rel="noopener noreferrer" style={{ fontSize: "11px", color: "#10A37F", textDecoration: "none" }}>Get OpenAI API key at platform.openai.com →</a>}
+            {provider === "meta"    && <a href="https://ollama.com/download"                    target="_blank" rel="noopener noreferrer" style={{ fontSize: "11px", color: "#0668E1", textDecoration: "none" }}>Download Ollama for local Meta AI →</a>}
+          </div>
+
+          {/* ── Save message ───────────────────────────────────────────────── */}
           {saveMsg && (
             <div style={{ padding: "10px 14px", borderRadius: "6px", marginBottom: "16px", backgroundColor: saveMsg.type === "success" ? "#002A12" : "#1A0000", border: `1px solid ${saveMsg.type === "success" ? "#22C55E" : "#EF4444"}`, color: saveMsg.type === "success" ? "#22C55E" : "#EF4444", fontSize: "13px" }}>{saveMsg.text}</div>
           )}
 
+          {/* ── Action buttons ─────────────────────────────────────────────── */}
           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-            <button onClick={handleSave} disabled={saving || !apiKey.trim()} style={{ padding: "12px 24px", borderRadius: "6px", backgroundColor: (saving || !apiKey.trim()) ? "#1A1A1A" : "#FFF", color: (saving || !apiKey.trim()) ? "#555" : "#000", border: "none", cursor: (saving || !apiKey.trim()) ? "not-allowed" : "pointer", fontFamily: mono, fontSize: "13px", fontWeight: 600 }}>{saving ? "Saving…" : "Save API Key"}</button>
-            <button onClick={handleTest} disabled={testing || !currentHint} style={{ padding: "12px 24px", borderRadius: "6px", backgroundColor: "transparent", color: (testing || !currentHint) ? "#555" : "#888", border: "1px solid #333", cursor: (testing || !currentHint) ? "not-allowed" : "pointer", fontFamily: mono, fontSize: "13px" }}>{testing ? "Testing…" : "Test Connection"}</button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              style={{ padding: "12px 28px", borderRadius: "6px", backgroundColor: saving ? "#1A1A1A" : "#FFF", color: saving ? "#555" : "#000", border: "none", cursor: saving ? "not-allowed" : "pointer", fontFamily: mono, fontSize: "13px", fontWeight: 600 }}
+            >{saving ? "Saving…" : "Save Settings"}</button>
+            <button
+              onClick={handleTest}
+              disabled={testing || (!currentHint && currentProvider !== "meta")}
+              style={{ padding: "12px 24px", borderRadius: "6px", backgroundColor: "transparent", color: (testing || (!currentHint && currentProvider !== "meta")) ? "#555" : "#888", border: "1px solid #333", cursor: "pointer", fontFamily: mono, fontSize: "13px" }}
+            >{testing ? "Testing…" : "Test Connection"}</button>
           </div>
 
+          {/* ── Test result ────────────────────────────────────────────────── */}
           {testResult && (
-            <div style={{ marginTop: "14px", padding: "10px 14px", borderRadius: "6px", backgroundColor: testResult.type === "success" ? "#002A12" : "#1A0000", border: `1px solid ${testResult.type === "success" ? "#22C55E" : "#EF4444"}`, color: testResult.type === "success" ? "#22C55E" : "#EF4444", fontSize: "12px", lineHeight: 1.7 }}>{testResult.text}</div>
+            <div style={{ marginTop: "14px", padding: "10px 14px", borderRadius: "6px", backgroundColor: testResult.type === "success" ? "#002A12" : "#1A0000", border: `1px solid ${testResult.type === "success" ? "#22C55E" : "#EF4444"}`, color: testResult.type === "success" ? "#22C55E" : "#EF4444", fontSize: "12px", lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{testResult.text}</div>
           )}
         </div>
 
-        {/* ── OpenRouter model picker card ────────────────────────────────── */}
-        {(provider === "openrouter" || currentProvider === "openrouter") && (
-          <div style={{ backgroundColor: "#080808", border: "1px solid #1A1A1A", borderRadius: "8px", padding: "24px", marginBottom: "20px" }}>
-            <h2 style={{ fontFamily: syne, fontSize: "18px", fontWeight: 600, margin: "0 0 4px" }}>OpenRouter Model</h2>
-            <p style={{ color: "#555", fontSize: "13px", margin: "0 0 6px", lineHeight: 1.5 }}>
-              OpenRouter gives access to <strong style={{ color: "#888" }}>300+ models</strong> from OpenAI, Anthropic, Google, Meta, Mistral, DeepSeek, xAI and more.
-              Free models are marked with <span style={{ color: "#22C55E" }}>:free</span>.
-            </p>
-            {currentModel && (
-              <p style={{ fontSize: "11px", color: "#555", margin: "0 0 16px" }}>
-                Currently using: <span style={{ color: "#AAA" }}>{currentModelLabel}</span>
-              </p>
-            )}
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "16px" }}>
-              <label style={{ fontSize: "12px", color: "#888" }}>Select model</label>
-              <select
-                value={orModel}
-                onChange={e => setOrModel(e.target.value)}
-                style={{ backgroundColor: "#0A0A0A", border: "1px solid #1A1A1A", color: "#FFF", padding: "12px 14px", fontFamily: mono, fontSize: "12px", borderRadius: "6px", outline: "none", appearance: "none", cursor: "pointer" }}
-              >
-                {OR_GROUPS.map(group => (
-                  <optgroup key={group} label={group}>
-                    {OR_MODELS.filter(m => m.group === group).map(m => (
-                      <option key={m.value} value={m.value}>{m.label}</option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ backgroundColor: "#050505", border: "1px solid #111", borderRadius: "6px", padding: "10px 12px", marginBottom: "16px" }}>
-              <p style={{ fontFamily: mono, fontSize: "10px", color: "#444", margin: "0 0 4px" }}>SELECTED MODEL ID</p>
-              <p style={{ fontFamily: mono, fontSize: "12px", color: "#06B6D4", margin: 0, wordBreak: "break-all" }}>{orModel}</p>
-            </div>
-
-            <p style={{ fontSize: "11px", color: "#444", margin: "0 0 16px", lineHeight: 1.6 }}>
-              💡 Free models work without credits. Paid models need OpenRouter credits.{" "}
-              <a href="https://openrouter.ai/models" target="_blank" rel="noopener noreferrer" style={{ color: "#06B6D4", textDecoration: "none" }}>Browse all 300+ models →</a>
-            </p>
-
-            <button
-              onClick={handleSaveModel}
-              disabled={orModel === currentModel}
-              style={{ padding: "10px 20px", borderRadius: "6px", backgroundColor: orModel !== currentModel ? "#FFF" : "#1A1A1A", color: orModel !== currentModel ? "#000" : "#555", border: "none", cursor: orModel !== currentModel ? "pointer" : "not-allowed", fontFamily: mono, fontSize: "13px", fontWeight: 600 }}
-            >{orModel === currentModel ? "Model saved ✓" : "Save Model Choice"}</button>
-          </div>
-        )}
-
-        {/* ── Account card ────────────────────────────────────────────────── */}
+        {/* ── Account card ──────────────────────────────────────────────────── */}
         <div style={{ backgroundColor: "#080808", border: "1px solid #1A1A1A", borderRadius: "8px", padding: "24px" }}>
-          <h2 style={{ fontFamily: syne, fontSize: "18px", fontWeight: 600, margin: "0 0 6px" }}>Account</h2>
+          <h2 style={{ fontFamily: syne, fontSize: "16px", fontWeight: 600, margin: "0 0 6px" }}>Account</h2>
           <p style={{ color: "#555", fontSize: "13px", margin: "0 0 16px" }}>{userEmail}</p>
           <button onClick={async () => { await supabase.auth.signOut(); router.push("/login"); }} style={{ padding: "10px 20px", borderRadius: "6px", backgroundColor: "transparent", color: "#EF4444", border: "1px solid #3A0000", cursor: "pointer", fontFamily: mono, fontSize: "13px" }}>Sign out</button>
         </div>

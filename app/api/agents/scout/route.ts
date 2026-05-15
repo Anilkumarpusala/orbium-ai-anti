@@ -8,13 +8,11 @@ For lead requests always return:
    Contact: Name, Title
    Email: real email or Find via LinkedIn
    Why: specific reason they need help
-Return 8-10 leads minimum.
-Be specific, never make up emails.`;
+Return 8-10 leads minimum. Be specific, never make up emails.`;
 
 export async function POST(req: Request) {
   try {
     const { task, userId } = await req.json();
-
     if (!task || !userId) {
       return Response.json({ error: "Missing task or userId" }, { status: 400 });
     }
@@ -22,74 +20,45 @@ export async function POST(req: Request) {
     const cookieStore = cookies();
     const supabase = createClient(cookieStore);
 
-    // ── Fetch profile (includes model choice) ──────────────────────────────
     const { data: profile, error: profileError } = await supabase
       .from("user_profiles")
-      .select("api_provider, encrypted_api_key, openrouter_model, tasks_used, tasks_limit")
+      .select("api_provider, encrypted_api_key, selected_model, ollama_base_url, tasks_used, tasks_limit")
       .eq("user_id", userId)
       .single();
 
     if (profileError) {
-      console.error("Profile fetch error:", profileError.message);
       return Response.json({ error: "Failed to fetch profile" }, { status: 500 });
     }
 
-    if (!profile?.encrypted_api_key) {
+    const provider = (profile?.api_provider ?? "").toLowerCase().trim();
+
+    // Meta/Ollama doesn't require an API key
+    if (provider !== "meta" && !profile?.encrypted_api_key) {
+      return Response.json({ error: "NO_API_KEY" }, { status: 400 });
+    }
+    if (!provider) {
       return Response.json({ error: "NO_API_KEY" }, { status: 400 });
     }
 
-    // ── Task limit check ───────────────────────────────────────────────────
-    const tasksUsed  = profile.tasks_used  ?? 0;
-    const tasksLimit = profile.tasks_limit ?? 10;
+    const tasksUsed  = profile?.tasks_used  ?? 0;
+    const tasksLimit = profile?.tasks_limit ?? 10;
     if (tasksUsed >= tasksLimit) {
       return Response.json({ error: "LIMIT_REACHED" }, { status: 403 });
     }
 
-    // ── Decode API key ─────────────────────────────────────────────────────
-    const apiKey   = Buffer.from(profile.encrypted_api_key, "base64").toString("utf-8").trim();
-    const provider = (profile.api_provider ?? "").toLowerCase().trim();
-    const orModel  = (profile.openrouter_model ?? "deepseek/deepseek-r1:free").trim();
+    const apiKey = profile?.encrypted_api_key
+      ? Buffer.from(profile.encrypted_api_key, "base64").toString("utf-8").trim()
+      : "";
+    const model  = (profile?.selected_model ?? "").trim();
+    const ollamaBase = (profile?.ollama_base_url ?? "http://localhost:11434").trim().replace(/\/$/, "");
 
-    // ── Call LLM ───────────────────────────────────────────────────────────
     let output: string;
 
-    if (provider === "openrouter") {
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "HTTP-Referer": "https://orbiumai.com",
-          "X-Title": "Orbium AI",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: orModel,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user",   content: task },
-          ],
-        }),
-      });
-
-      const json = await res.json();
-      console.log("Scout / OpenRouter response:", JSON.stringify(json, null, 2));
-
-      if (!res.ok) {
-        // Prefer metadata.raw — it has the real upstream reason (e.g. rate limit message)
-        const raw = json?.error?.metadata?.raw;
-        const msg = (typeof raw === "string" ? raw : null)
-          ?? json?.error?.message
-          ?? json?.message
-          ?? `OpenRouter error ${res.status}`;
-        throw new Error(msg);
-      }
-
-      output = json?.choices?.[0]?.message?.content;
-      if (!output) throw new Error("No output returned from model");
-
-    } else if (provider === "gemini") {
+    // ── Google Gemini ──────────────────────────────────────────────────────
+    if (provider === "gemini") {
+      const geminiModel = model || "gemini-2.0-flash";
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -99,39 +68,14 @@ export async function POST(req: Request) {
         }
       );
       const json = await res.json();
+      console.log("Scout / Gemini response:", JSON.stringify(json, null, 2));
       if (!res.ok) throw new Error(json?.error?.message ?? `Gemini error ${res.status}`);
       output = json?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!output) throw new Error("No output from Gemini");
 
-    } else if (provider === "openai") {
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: task }],
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error?.message ?? `OpenAI error ${res.status}`);
-      output = json?.choices?.[0]?.message?.content;
-      if (!output) throw new Error("No output from OpenAI");
-
-    } else if (provider === "groq") {
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "llama-3.1-8b-instant",
-          messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: task }],
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error?.message ?? `Groq error ${res.status}`);
-      output = json?.choices?.[0]?.message?.content;
-      if (!output) throw new Error("No output from Groq");
-
+    // ── Anthropic Claude ───────────────────────────────────────────────────
     } else if (provider === "claude") {
+      const claudeModel = model || "claude-3-5-haiku-20241022";
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -140,22 +84,61 @@ export async function POST(req: Request) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "claude-3-5-haiku-20241022",
+          model: claudeModel,
           max_tokens: 2048,
           system: SYSTEM_PROMPT,
           messages: [{ role: "user", content: task }],
         }),
       });
       const json = await res.json();
+      console.log("Scout / Claude response:", JSON.stringify(json, null, 2));
       if (!res.ok) throw new Error(json?.error?.message ?? `Claude error ${res.status}`);
       output = json?.content?.[0]?.text;
       if (!output) throw new Error("No output from Claude");
 
+    // ── OpenAI ChatGPT ─────────────────────────────────────────────────────
+    } else if (provider === "openai") {
+      const openaiModel = model || "gpt-4o-mini";
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: openaiModel,
+          messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: task }],
+        }),
+      });
+      const json = await res.json();
+      console.log("Scout / OpenAI response:", JSON.stringify(json, null, 2));
+      if (!res.ok) throw new Error(json?.error?.message ?? `OpenAI error ${res.status}`);
+      output = json?.choices?.[0]?.message?.content;
+      if (!output) throw new Error("No output from OpenAI");
+
+    // ── Meta AI via Ollama (local or remote) ───────────────────────────────
+    } else if (provider === "meta") {
+      const ollamaModel = model || "llama3.3:latest";
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+      const res = await fetch(`${ollamaBase}/v1/chat/completions`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model: ollamaModel,
+          messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: task }],
+          stream: false,
+        }),
+      });
+      const json = await res.json();
+      console.log("Scout / Ollama response:", JSON.stringify(json, null, 2));
+      if (!res.ok) throw new Error(json?.error?.message ?? json?.error ?? `Ollama error ${res.status}`);
+      output = json?.choices?.[0]?.message?.content;
+      if (!output) throw new Error("No output from Ollama. Is `ollama serve` running?");
+
     } else {
-      throw new Error(`Unknown provider: "${provider}". Go to Settings and set your provider.`);
+      throw new Error(`Unknown provider: "${provider}". Go to Settings and configure your AI.`);
     }
 
-    // ── Increment task counter ─────────────────────────────────────────────
+    // Increment task counter
     await supabase
       .from("user_profiles")
       .update({ tasks_used: tasksUsed + 1 })
