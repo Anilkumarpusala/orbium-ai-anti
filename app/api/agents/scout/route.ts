@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     // ── Decode API key ─────────────────────────────────────────────────────
     const apiKey   = Buffer.from(profile.encrypted_api_key, "base64").toString("utf-8").trim();
     const provider = (profile.api_provider ?? "").toLowerCase().trim();
-    const orModel  = (profile.openrouter_model ?? "meta-llama/llama-3.3-70b-instruct:free").trim();
+    const orModel  = (profile.openrouter_model ?? "deepseek/deepseek-r1:free").trim();
 
     // ── Call LLM ───────────────────────────────────────────────────────────
     let output: string;
@@ -75,7 +75,12 @@ export async function POST(req: Request) {
       console.log("Scout / OpenRouter response:", JSON.stringify(json, null, 2));
 
       if (!res.ok) {
-        const msg = json?.error?.message ?? json?.message ?? `OpenRouter error ${res.status}`;
+        // Prefer metadata.raw — it has the real upstream reason (e.g. rate limit message)
+        const raw = json?.error?.metadata?.raw;
+        const msg = (typeof raw === "string" ? raw : null)
+          ?? json?.error?.message
+          ?? json?.message
+          ?? `OpenRouter error ${res.status}`;
         throw new Error(msg);
       }
 
