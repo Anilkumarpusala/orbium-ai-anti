@@ -149,16 +149,10 @@ export default function SettingsPage() {
         patch.api_key_hint      = apiKey.trim().slice(-4);
       }
 
-      const { error, count } = await supabase
+      const { error } = await supabase
         .from("user_profiles")
-        .update(patch)
-        .eq("user_id", userId)
-        .select("user_id", { count: "exact", head: true });
+        .upsert({ user_id: userId, ...patch }, { onConflict: "user_id" });
       if (error) throw error;
-      if ((count ?? 0) === 0) {
-        const { error: ie } = await supabase.from("user_profiles").insert({ user_id: userId, ...patch });
-        if (ie) throw ie;
-      }
 
       setCurrentProvider(provider);
       if (apiKey.trim()) setCurrentHint(apiKey.trim().slice(-4));
